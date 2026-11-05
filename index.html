@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>eScorecard Results</title>
+<style>
+  :root { --bg:#f2f2f7; --card:#fff; --text:#111; --muted:#6c6c70; --line:#e5e5ea; --green:#1b7f3b; --red:#d70015; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#000; --card:#1c1c1e; --text:#f2f2f7; --muted:#98989d; --line:#2c2c2e; --green:#34c759; --red:#ff453a; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  header { background:#dcf5dc; color:#007aff; text-align:center; padding:20px 16px; font-size:28px; font-weight:700; }
+  @media (prefers-color-scheme: dark) { header { background:#12331a; color:#0a84ff; } }
+  main { max-width:720px; margin:0 auto; padding:16px; }
+  .card { background:var(--card); border-radius:16px; padding:8px 16px; margin-bottom:16px; }
+  h1 { font-size:22px; margin:8px 0 4px; }
+  .meta { display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--line); }
+  .meta:last-child { border-bottom:0; }
+  .meta span:last-child { color:var(--muted); }
+  table { width:100%; border-collapse:collapse; }
+  th { text-align:left; font-size:13px; color:var(--muted); padding:10px 0; border-bottom:1px solid var(--line); }
+  td { padding:12px 0; border-bottom:1px solid var(--line); vertical-align:top; }
+  tr:last-child td { border-bottom:0; }
+  .pos { width:48px; font-weight:600; }
+  .pts { width:56px; text-align:right; font-size:20px; font-weight:700; }
+  th.pts { font-size:13px; font-weight:600; }
+  .sub { font-size:13px; color:var(--muted); }
+  form { display:flex; gap:8px; padding:12px 0; }
+  input { flex:1; font:inherit; text-transform:uppercase; padding:10px 12px; border-radius:10px; border:1px solid var(--line); background:var(--bg); color:var(--text); letter-spacing:.1em; }
+  button { font:inherit; font-weight:600; padding:10px 16px; border:0; border-radius:10px; background:var(--green); color:#fff; }
+  .error { color:var(--red); padding:12px 0; }
+  .foot { text-align:center; color:var(--muted); font-size:13px; }
+</style>
+</head>
+<body>
+<header>eScorecard</header>
+<main>
+  <div class="card" id="entry">
+    <form id="codeForm">
+      <input id="codeInput" placeholder="Competition code" maxlength="6" autocomplete="off" autocapitalize="characters">
+      <button>Show results</button>
+    </form>
+  </div>
+  <div id="out"></div>
+  <p class="foot" id="foot"></p>
+</main>
+<script>
+const SUPABASE_URL = "https://zvsstqtlrpbfruvgsyfc.supabase.co";
+const KEY = "sb_publishable_TJv-sFIxLdrimESFaVi4GQ_xaAzTB0j";
+const out = document.getElementById("out");
+const foot = document.getElementById("foot");
+let timer;
+
+function el(tag, props = {}, ...kids) {
+  const e = document.createElement(tag);
+  Object.assign(e, props);
+  for (const k of kids) e.append(k);
+  return e;
+}
+
+async function get(path) {
+  const r = await fetch(SUPABASE_URL + "/rest/v1/" + path, { headers: { apikey: KEY } });
+  if (!r.ok) throw new Error("The server returned an error (" + r.status + ").");
+  return r.json();
+}
+
+// The app stores the format's identifier (e.g. "welshStableford"); show it as words.
+const formatLabel = c => c.is_team
+  ? c.format.replace(/([A-Z])/g, " $1").replace(/^./, s => s.toUpperCase())
+  : "Individual Stableford";
+
+const last = (e, n) => e.hole_points.slice(-n).reduce((a, b) => a + b, 0);
+const key = e => [e.hole_points.reduce((a, b) => a + b, 0), last(e, 9), last(e, 6), last(e, 3), last(e, 1)];
+const cmp = (a, b) => { for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return b[i] - a[i]; return 0; };
+
+// Highest points first, ties settled on the last 9, 6, 3 and 1 holes; entries still level share a position.
+function rank(entries) {
+  const rows = entries.map(e => ({ e, k: key(e) }));
+  rows.sort((a, b) => cmp(a.k, b.k) || a.e.name.localeCompare(b.e.name, undefined, { sensitivity: "base" }));
+  return rows.map(r => {
+    const same = rows.filter(o => cmp(o.k, r.k) === 0);
+    return { ...r, position: rows.indexOf(same[0]) + 1, tied: same.length > 1 };
+  });
+}
+
+async function show(code) {
+  code = code.trim().toUpperCase();
+  clearTimeout(timer);
+  if (!code) { out.replaceChildren(); return; }
+  try {
+    const [comps, entries] = await Promise.all([
+      get("competitions?code=eq." + encodeURIComponent(code) + "&select=*"),
+      get("entries?competition_code=eq." + encodeURIComponent(code) + "&select=*"),
+    ]);
+    if (!comps.length) { out.replaceChildren(el("div", { className: "card" }, el("p", { className: "error", textContent: "No competition was found with that code." }))); return; }
+    const c = comps[0];
+    const info = el("div", { className: "card" },
+      el("h1", { textContent: c.name }),
+      ...[["Date", new Date(c.date).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })],
+          ["Format", formatLabel(c)], ["Allowance", Math.round(c.allowance * 100) + "%"], ["Code", c.code]]
+        .map(([k, v]) => el("div", { className: "meta" }, el("span", { textContent: k }), el("span", { textContent: v }))));
+    const table = el("table", {}, el("tr", {},
+      el("th", { className: "pos", textContent: "Pos" }), el("th", { textContent: "Name" }), el("th", { className: "pts", textContent: "Pts" })));
+    const ranked = rank(entries);
+    for (const r of ranked) {
+      const e = r.e;
+      const name = el("td", {}, el("div", { textContent: e.name }));
+      if (c.is_team) name.append(el("div", { className: "sub", textContent: e.players.join(", ") }));
+      name.append(el("div", { className: "sub", textContent: e.course_name + " · last 9: " + last(e, 9) + ", 6: " + last(e, 6) + ", 3: " + last(e, 3) + ", 1: " + last(e, 1) }));
+      table.append(el("tr", {},
+        el("td", { className: "pos", textContent: (r.tied ? "T" : "") + r.position }), name,
+        el("td", { className: "pts", textContent: r.k[0] })));
+    }
+    const results = el("div", { className: "card" }, ranked.length ? table : el("p", { className: "sub", textContent: "No results yet." }));
+    out.replaceChildren(info, results);
+    foot.textContent = "Updated " + new Date().toLocaleTimeString() + " · refreshes every 30 seconds";
+    timer = setTimeout(() => show(code), 30000);
+  } catch (err) {
+    out.replaceChildren(el("div", { className: "card" }, el("p", { className: "error", textContent: err.message.startsWith("The server") ? err.message : "Couldn't reach the server. Check your connection and try again." })));
+    timer = setTimeout(() => show(code), 30000);
+  }
+}
+
+document.getElementById("codeForm").addEventListener("submit", ev => {
+  ev.preventDefault();
+  const code = document.getElementById("codeInput").value.trim().toUpperCase();
+  history.replaceState(null, "", code ? "?code=" + encodeURIComponent(code) : location.pathname);
+  show(code);
+});
+
+const initial = (new URLSearchParams(location.search).get("code") || location.hash.slice(1)).toUpperCase();
+if (initial) { document.getElementById("codeInput").value = initial; show(initial); }
+</script>
+</body>
+</html>
