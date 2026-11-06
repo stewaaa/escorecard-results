@@ -87,7 +87,7 @@ async function get(path) {
 
 // The app stores the format's identifier (e.g. "welshStableford"); show it as words.
 const formatLabel = c => c.is_team
-  ? c.format.replace(/([A-Z])/g, " $1").replace(/^./, s => s.toUpperCase())
+  ? c.format === "greensomesStableford" ? "Greensomes (Stableford)" : c.format.replace(/([A-Z])/g, " $1").replace(/^./, s => s.toUpperCase())
   : "Individual Stableford";
 
 const last = (e, n) => e.hole_points.slice(-n).reduce((a, b) => a + b, 0);
