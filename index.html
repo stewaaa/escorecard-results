@@ -36,6 +36,9 @@
   table.grid td { padding:2px; border:0; }
   table.grid th:first-child, table.grid td:first-child { text-align:left; color:var(--muted); }
   table.grid .tot { font-weight:600; }
+  table.grid td.muted { color:var(--muted); }
+  table.grid td.teamlabel { font-weight:600; }
+  table.grid tr.pts-row td { border-top:1px solid var(--line); }
   table.grid td.counted { background:#ffe88c; color:#000; border-radius:3px; }
   table.grid th:first-child, table.grid td:first-child { width:18%; }
   table.grid tr.si td { color:var(--muted); }
@@ -145,10 +148,18 @@ function holeCard(e) {
         rows.push(el("tr", {}, label(c.name, c.colour),
           ...g.map((s, i) => el("td", { textContent: s > 0 ? s : "–", className: c.counted?.[from + i] ? "counted" : "" })),
           el("td", { className: "tot", textContent: sum(g) })));
+        // In a team event each player's Stableford points sit under their strokes.
+        if (c.points) {
+          const p = nine(c.points, from);
+          rows.push(el("tr", { className: "pp" }, el("td", { className: "muted", textContent: "Pts" }),
+            ...p.map((s, i) => el("td", { textContent: s, className: c.counted?.[from + i] ? "counted" : "" })),
+            el("td", { className: "tot", textContent: sum(p) })));
+        }
       }
     }
     const pts = nine(e.hole_points, from);
-    rows.push(el("tr", { className: "pts-row" }, el("td", { textContent: "Pts" }), ...pts.map(s => el("td", { textContent: s })),
+    const team = (e.gross ?? []).some(c => c?.points);
+    rows.push(el("tr", { className: "pts-row" }, el("td", { className: team ? "teamlabel" : "muted", textContent: team ? "Team" : "Pts" }), ...pts.map(s => el("td", { textContent: s })),
       el("td", { className: "tot", textContent: sum(pts) })));
     wrap.append(el("table", { className: "grid" }, ...rows));
   }
