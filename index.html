@@ -100,7 +100,13 @@ function rank(entries) {
   rows.sort((a, b) => cmp(a.k, b.k) || a.e.name.localeCompare(b.e.name, undefined, { sensitivity: "base" }));
   return rows.map(r => {
     const same = rows.filter(o => cmp(o.k, r.k) === 0);
-    return { ...r, position: rows.indexOf(same[0]) + 1, tied: same.length > 1 };
+    // The countback that settled it: the first one that differs from each neighbour level on total points.
+    const i = rows.indexOf(r);
+    const levels = [rows[i - 1], rows[i + 1]].filter(o => o && o.k[0] === r.k[0])
+      .map(o => [1, 2, 3, 4].find(n => r.k[n] !== o.k[n])).filter(n => n !== undefined);
+    const level = levels.length ? Math.max(...levels) : 0;
+    return { ...r, position: rows.indexOf(same[0]) + 1, tied: same.length > 1,
+             countback: level ? "last " + [9, 6, 3, 1][level - 1] + ": " + r.k[level] : "" };
   });
 }
 
@@ -191,7 +197,7 @@ async function show(code) {
     for (const r of ranked) {
       const e = r.e;
       const name = el("td", {}, el("div", { textContent: e.name }));
-      name.append(el("div", { className: "sub", textContent: e.course_name + " · last 9: " + last(e, 9) + ", 6: " + last(e, 6) + ", 3: " + last(e, 3) + ", 1: " + last(e, 1) }));
+      name.append(el("div", { className: "sub", textContent: e.course_name + (r.countback ? " · countback " + r.countback : "") }));
       const row = el("tr", { className: "result", tabIndex: 0 },
         el("td", { className: "pos", textContent: (r.tied ? "T" : "") + r.position }), name,
         el("td", { className: "pts", textContent: r.k[0] }));
