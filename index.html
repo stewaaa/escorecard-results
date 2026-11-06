@@ -39,7 +39,8 @@
   table.grid td.muted { color:var(--muted); }
   table.grid td.teamlabel { font-weight:600; }
   table.grid tr.pts-row td { border-top:1px solid var(--line); }
-  table.grid td.counted { background:#ffe88c; color:#000; border-radius:3px; }
+  table.grid td.counted { color:var(--red); font-weight:700; }
+  table.grid tr.sep td { border-top:1px solid var(--line); }
   table.grid th:first-child, table.grid td:first-child { width:18%; }
   table.grid tr.si td { color:var(--muted); }
   table.grid td.who { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -139,14 +140,15 @@ function holeCard(e) {
   for (const [title, from] of [["Out", 0], ["In", 9]]) {
     const rows = [el("tr", {}, el("th", { textContent: "Hole" }), ...nine([], from).map((_, i) => el("th", { textContent: from + i + 1 })), el("th", { textContent: title }))];
     // Older entries have no tees or gross scores, only points.
-    for (const group of cardGroups(e)) {
+    cardGroups(e).forEach((group, gi) => {
       const colours = new Set(group.map(c => c.colour));
-      rows.push(el("tr", { className: "si" }, label("SI", colours.size === 1 ? [...colours][0] : null),
+      // A line separates each stroke index group and each player.
+      rows.push(el("tr", { className: gi > 0 ? "si sep" : "si" }, label("SI", colours.size === 1 ? [...colours][0] : null),
         ...nine(group[0].strokeIndex, from).map(s => el("td", { textContent: s })), el("td")));
-      for (const c of group) {
+      group.forEach((c, ci) => {
         const g = nine(c.scores, from);   // 0 = no return
-        rows.push(el("tr", {}, label(c.name, c.colour),
-          ...g.map((s, i) => el("td", { textContent: s > 0 ? s : "–", className: c.counted?.[from + i] ? "counted" : "" })),
+        rows.push(el("tr", { className: ci > 0 ? "sep" : "" }, label(c.name, c.colour),
+          ...g.map(s => el("td", { textContent: s > 0 ? s : "–" })),
           el("td", { className: "tot", textContent: sum(g) })));
         // In a team event each player's Stableford points sit under their strokes.
         if (c.points) {
@@ -155,15 +157,15 @@ function holeCard(e) {
             ...p.map((s, i) => el("td", { textContent: s, className: c.counted?.[from + i] ? "counted" : "" })),
             el("td", { className: "tot", textContent: sum(p) })));
         }
-      }
-    }
+      });
+    });
     const pts = nine(e.hole_points, from);
     const team = (e.gross ?? []).some(c => c?.points);
     rows.push(el("tr", { className: "pts-row" }, el("td", { className: team ? "teamlabel" : "muted", textContent: team ? "Team" : "Pts" }), ...pts.map(s => el("td", { textContent: s })),
       el("td", { className: "tot", textContent: sum(pts) })));
     wrap.append(el("table", { className: "grid" }, ...rows));
   }
-  if ((e.gross ?? []).some(c => c?.counted)) wrap.append(el("div", { className: "sub", textContent: "Highlighted scores counted for the team." }));
+  if ((e.gross ?? []).some(c => c?.counted)) wrap.append(el("div", { className: "sub", textContent: "Points in bold red counted for the team." }));
   return wrap;
 }
 
