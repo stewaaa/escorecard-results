@@ -36,6 +36,12 @@
   table.grid td { padding:2px; border:0; }
   table.grid th:first-child, table.grid td:first-child { text-align:left; color:var(--muted); }
   table.grid .tot { font-weight:600; }
+  table.grid td.counted { background:#ffe88c; color:#000; border-radius:3px; }
+  table.grid th:first-child, table.grid td:first-child { width:18%; }
+  table.grid tr.si td { color:var(--muted); }
+  table.grid td.who { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  table.grid td.who.tee { border-radius:4px; padding:2px 4px; box-shadow:inset 0 0 0 1px rgba(128,128,128,.35); }
+  table.grid tr.si td:first-child:not(.tee) { color:var(--muted); }
   form { display:flex; gap:8px; padding:12px 0; }
   input { flex:1; font:inherit; text-transform:uppercase; padding:10px 12px; border-radius:10px; border:1px solid var(--line); background:var(--bg); color:var(--text); letter-spacing:.1em; }
   button { font:inherit; font-weight:600; padding:10px 16px; border:0; border-radius:10px; background:var(--green); color:#fff; }
@@ -96,17 +102,57 @@ function rank(entries) {
 
 const expanded = new Set();   // entries whose hole-by-hole card is open; kept across refreshes
 
-// The points scored on each hole, front nine then back nine, with the nine-hole totals.
-function holeCard(points) {
-  const wrap = el("div", { className: "holes" });
-  for (const [title, from] of [["Out", 0], ["In", 9]]) {
-    const scores = Array.from({ length: 9 }, (_, i) => points[from + i] ?? 0);
-    const t = el("table", { className: "grid" },
-      el("tr", {}, el("th", { textContent: "Hole" }), ...scores.map((_, i) => el("th", { textContent: from + i + 1 })), el("th", { textContent: title })),
-      el("tr", {}, el("td", { textContent: "Pts" }), ...scores.map(s => el("td", { textContent: s })),
-        el("td", { className: "tot", textContent: scores.reduce((a, b) => a + b, 0) })));
-    wrap.append(t);
+// Tee colours as on the app's card: fill and text.
+const TEES = {
+  white: ["#ffffff", "#000000"], yellow: ["#ffcc00", "#000000"], red: ["#cc1a4d", "#ffffff"],
+  blue: ["#2659cc", "#ffffff"], black: ["#1f1f1f", "#ffffff"], green: ["#268c40", "#ffffff"],
+};
+
+// A name cell filled with the tee's colour, when it has one.
+function label(text, colour) {
+  const td = el("td", { className: "who", textContent: text, title: text });
+  const tee = TEES[colour];
+  if (tee) { td.style.background = tee[0]; td.style.color = tee[1]; td.classList.add("tee"); }
+  return td;
+}
+
+// The cards grouped by stroke index, so players whose tees share one sit together.
+function cardGroups(e) {
+  const groups = [];
+  for (const c of e.gross ?? []) {
+    if (!c || Array.isArray(c) || !c.strokeIndex) continue;   // entries in an older shape carry no tee
+    const g = groups.find(g => g[0].strokeIndex.join() === c.strokeIndex.join());
+    g ? g.push(c) : groups.push([c]);
   }
+  return groups;
+}
+
+// The completed card: stroke index, each player's gross strokes and the points on every hole, front nine
+// then back nine, with the nine-hole totals.
+function holeCard(e) {
+  const wrap = el("div", { className: "holes" });
+  const nine = (array, from) => Array.from({ length: 9 }, (_, i) => array?.[from + i] ?? 0);
+  const sum = a => a.reduce((x, y) => x + y, 0);
+  for (const [title, from] of [["Out", 0], ["In", 9]]) {
+    const rows = [el("tr", {}, el("th", { textContent: "Hole" }), ...nine([], from).map((_, i) => el("th", { textContent: from + i + 1 })), el("th", { textContent: title }))];
+    // Older entries have no tees or gross scores, only points.
+    for (const group of cardGroups(e)) {
+      const colours = new Set(group.map(c => c.colour));
+      rows.push(el("tr", { className: "si" }, label("SI", colours.size === 1 ? [...colours][0] : null),
+        ...nine(group[0].strokeIndex, from).map(s => el("td", { textContent: s })), el("td")));
+      for (const c of group) {
+        const g = nine(c.scores, from);   // 0 = no return
+        rows.push(el("tr", {}, label(c.name, c.colour),
+          ...g.map((s, i) => el("td", { textContent: s > 0 ? s : "–", className: c.counted?.[from + i] ? "counted" : "" })),
+          el("td", { className: "tot", textContent: sum(g) })));
+      }
+    }
+    const pts = nine(e.hole_points, from);
+    rows.push(el("tr", { className: "pts-row" }, el("td", { textContent: "Pts" }), ...pts.map(s => el("td", { textContent: s })),
+      el("td", { className: "tot", textContent: sum(pts) })));
+    wrap.append(el("table", { className: "grid" }, ...rows));
+  }
+  if ((e.gross ?? []).some(c => c?.counted)) wrap.append(el("div", { className: "sub", textContent: "Highlighted scores counted for the team." }));
   return wrap;
 }
 
@@ -132,12 +178,11 @@ async function show(code) {
     for (const r of ranked) {
       const e = r.e;
       const name = el("td", {}, el("div", { textContent: e.name }));
-      if (c.is_team) name.append(el("div", { className: "sub", textContent: e.players.join(", ") }));
       name.append(el("div", { className: "sub", textContent: e.course_name + " · last 9: " + last(e, 9) + ", 6: " + last(e, 6) + ", 3: " + last(e, 3) + ", 1: " + last(e, 1) }));
       const row = el("tr", { className: "result", tabIndex: 0 },
         el("td", { className: "pos", textContent: (r.tied ? "T" : "") + r.position }), name,
         el("td", { className: "pts", textContent: r.k[0] }));
-      const detail = el("tr", { className: "detail", hidden: !expanded.has(e.id) }, el("td", { colSpan: 3 }, holeCard(e.hole_points)));
+      const detail = el("tr", { className: "detail", hidden: !expanded.has(e.id) }, el("td", { colSpan: 3 }, holeCard(e)));
       const toggle = () => { detail.hidden = !detail.hidden; detail.hidden ? expanded.delete(e.id) : expanded.add(e.id); };
       row.addEventListener("click", toggle);
       row.addEventListener("keydown", ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); toggle(); } });
