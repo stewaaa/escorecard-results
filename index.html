@@ -90,11 +90,13 @@ async function get(path) {
 // The app stores the format's identifier (e.g. "welshStableford"); show it as words.
 const formatLabel = c => c.is_team
   ? c.format === "greensomesStableford" ? "Greensomes (Stableford)" : c.format.replace(/([A-Z])/g, " $1").replace(/^./, s => s.toUpperCase())
-  : "Individual Stableford";
+  : c.format === "medalPlay" ? "Individual Medal" : "Individual Stableford";
 
 const last = (e, n) => e.hole_points.slice(-n).reduce((a, b) => a + b, 0);
 const key = e => [e.hole_points.reduce((a, b) => a + b, 0), last(e, 9), last(e, 6), last(e, 3), last(e, 1)];
-const cmp = (a, b) => { for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return b[i] - a[i]; return 0; };
+// A medal competition ranks the lowest net total first; every other format the highest points.
+let lowestWins = false, unit = "Pts";
+const cmp = (a, b) => { for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return lowestWins ? a[i] - b[i] : b[i] - a[i]; return 0; };
 
 // Highest points first, ties settled on the last 9, 6, 3 and 1 holes; entries still level share a position.
 function rank(entries) {
@@ -169,7 +171,7 @@ function holeCard(e) {
     });
     const pts = nine(e.hole_points, from);
     const team = (e.gross ?? []).some(c => c?.points);
-    rows.push(el("tr", { className: "pts-row" }, el("td", { className: team ? "teamlabel" : "muted", textContent: team ? "Team" : "Pts" }), ...pts.map(s => el("td", { textContent: s })),
+    rows.push(el("tr", { className: "pts-row" }, el("td", { className: team ? "teamlabel" : "muted", textContent: team ? "Team" : unit }), ...pts.map(s => el("td", { textContent: s })),
       el("td", { className: "tot", textContent: sum(pts) })));
     wrap.append(el("table", { className: "grid" }, ...rows));
   }
@@ -188,13 +190,15 @@ async function show(code) {
     ]);
     if (!comps.length) { out.replaceChildren(el("div", { className: "card" }, el("p", { className: "error", textContent: "No competition was found with that code." }))); return; }
     const c = comps[0];
+    lowestWins = !c.is_team && c.format === "medalPlay";
+    unit = lowestWins ? "Net" : "Pts";
     const info = el("div", { className: "card" },
       el("h1", { textContent: c.name }),
       ...[["Date", new Date(c.date).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })],
           ["Format", formatLabel(c)], ["Allowance", Math.round(c.allowance * 100) + "%"], ["Code", c.code]]
         .map(([k, v]) => el("div", { className: "meta" }, el("span", { textContent: k }), el("span", { textContent: v }))));
     const table = el("table", {}, el("tr", {},
-      el("th", { className: "pos", textContent: "Pos" }), el("th", { textContent: "Name" }), el("th", { className: "pts", textContent: "Pts" })));
+      el("th", { className: "pos", textContent: "Pos" }), el("th", { textContent: "Name" }), el("th", { className: "pts", textContent: unit })));
     const ranked = rank(entries);
     for (const r of ranked) {
       const e = r.e;
