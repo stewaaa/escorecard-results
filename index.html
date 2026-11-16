@@ -90,7 +90,7 @@ async function get(path) {
 // The app stores the format's identifier (e.g. "welshStableford"); show it as words.
 const formatLabel = c => c.is_team
   ? c.format === "greensomesStableford" ? "Greensomes (Stableford)" : c.format.replace(/([A-Z])/g, " $1").replace(/^./, s => s.toUpperCase())
-  : c.format === "medalPlay" ? "Individual Medal" : "Individual Stableford";
+  : c.format === "medalPlay" ? "Individual Medal" : c.format === "bestTwelve" ? "Best 12 (Stableford)" : "Individual Stableford";
 
 const last = (e, n) => e.hole_points.slice(-n).reduce((a, b) => a + b, 0);
 const key = e => [e.hole_points.reduce((a, b) => a + b, 0), last(e, 9), last(e, 6), last(e, 3), last(e, 1)];
@@ -170,12 +170,12 @@ function holeCard(e) {
       });
     });
     const pts = nine(e.hole_points, from);
-    const team = (e.gross ?? []).some(c => c?.points);
-    rows.push(el("tr", { className: "pts-row" }, el("td", { className: team ? "teamlabel" : "muted", textContent: team ? "Team" : unit }), ...pts.map(s => el("td", { textContent: s })),
+    const team = (e.gross ?? []).some(c => c?.points), single = e.players.length < 2;
+    rows.push(el("tr", { className: "pts-row" }, el("td", { className: team ? "teamlabel" : "muted", textContent: team ? (single ? "Best 12" : "Team") : unit }), ...pts.map(s => el("td", { textContent: s })),
       el("td", { className: "tot", textContent: sum(pts) })));
     wrap.append(el("table", { className: "grid" }, ...rows));
   }
-  if ((e.gross ?? []).some(c => c?.counted)) wrap.append(el("div", { className: "sub", textContent: "Points in bold red counted for the team." }));
+  if ((e.gross ?? []).some(c => c?.counted)) wrap.append(el("div", { className: "sub", textContent: e.players.length > 1 ? "Points in bold red counted for the team." : "Points in bold red are the best 12 holes, which count." }));
   return wrap;
 }
 
